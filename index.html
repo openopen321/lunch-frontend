@@ -3,120 +3,146 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>辦公室訂便當系統</title>
-    <!-- 引入 React 和 Tailwind CSS -->
+    <title>辦公室訂便當系統 (除錯版)</title>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: #f3f4f6; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f3f4f6; }
         .mobile-container { max-width: 480px; margin: 0 auto; min-height: 100vh; background: white; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); display: flex; flex-direction: column; }
+        .animate-fade-in { animation: fadeIn 0.5s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
     </style>
 </head>
 <body>
     <div id="root"></div>
 
     <script type="text/babel">
-        // ==========================================
-        // 設定區：你的後端網址 (我已經幫你填好了)
-        // ==========================================
-        const API_BASE_URL = "https://lunch-backend-iccv.onrender.com"; 
-
         const { useState, useEffect } = React;
 
-        // 預設餐廳資料 (如果後端還沒回應時顯示)
-        const DEFAULT_RESTAURANT = {
-            name: "載入中...",
-            address: "請稍候",
-            phone: "",
-            minDelivery: 0,
-            menu: []
-        };
+        // 預設後端網址 (請確認這跟你的 Render 網址一模一樣)
+        const DEFAULT_API_URL = "https://lunch-backend-iccv.onrender.com";
 
         function App() {
-            // 頁面狀態: landing(首頁), create(開團), order(點餐), admin(管理)
             const [view, setView] = useState('landing');
             const [loading, setLoading] = useState(false);
-            const [groupId, setGroupId] = useState(null);
-            const [groupData, setGroupData] = useState(null); // { restaurant, orders, status }
+            const [errorMsg, setErrorMsg] = useState(""); // 用來顯示錯誤
             
-            // 購物車與使用者
+            // 設定相關
+            const [apiUrl, setApiUrl] = useState(DEFAULT_API_URL);
+            const [showSettings, setShowSettings] = useState(false);
+
+            const [groupId, setGroupId] = useState(null);
+            const [groupData, setGroupData] = useState(null);
             const [cart, setCart] = useState({});
             const [myName, setMyName] = useState("");
             const [orderNote, setOrderNote] = useState("");
             const [isNameModalOpen, setIsNameModalOpen] = useState(false);
 
-            // 初始化：讀取網址參數 (看看是不是別人傳來的連結)
+            // 初始化
             useEffect(() => {
                 const savedName = localStorage.getItem('userName');
+                const savedUrl = localStorage.getItem('apiUrl');
+                
                 if (savedName) setMyName(savedName);
+                if (savedUrl) setApiUrl(savedUrl);
 
-                // 檢查網址有沒有 ?group_id=xxx
                 const params = new URLSearchParams(window.location.search);
                 const urlGroupId = params.get('group_id');
                 const urlView = params.get('view');
 
                 if (urlGroupId) {
                     setGroupId(urlGroupId);
-                    fetchGroupData(urlGroupId);
+                    fetchGroupData(urlGroupId, savedUrl || DEFAULT_API_URL);
                     if (urlView === 'order') setView('order');
                     else if (urlView === 'admin') setView('admin');
-                    else setView('order'); // 預設進入點餐
+                    else setView('order');
                 }
             }, []);
 
-            // 定時更新資料 (簡易版即時同步)
+            // 定時更新
             useEffect(() => {
                 if (!groupId) return;
                 const interval = setInterval(() => {
-                    fetchGroupData(groupId);
-                }, 5000); // 每5秒更新一次
+                    fetchGroupData(groupId, apiUrl);
+                }, 5000);
                 return () => clearInterval(interval);
-            }, [groupId]);
+            }, [groupId, apiUrl]);
 
-            // ---------------- API 串接 ----------------
+            // --- API ---
 
-            const fetchGroupData = async (id) => {
+            const fetchGroupData = async (id, url) => {
                 try {
-                    const res = await fetch(`${API_BASE_URL}/api/group/${id}`);
+                    const res = await fetch(`${url}/api/group/${id}`);
                     if (res.ok) {
                         const data = await res.json();
                         setGroupData(data);
+                        setErrorMsg("");
+                    } else {
+                        console.log("同步失敗，可能網路不穩");
                     }
                 } catch (err) {
-                    console.error("更新失敗", err);
+                    // 背景更新失敗不需一直跳錯誤
+                    console.error(err);
+                }
+            };
+
+            const handleSaveSettings = () => {
+                // 移除結尾斜線
+                let cleanUrl = apiUrl.replace(/\/$/, "");
+                setApiUrl(cleanUrl);
+                localStorage.setItem('apiUrl', cleanUrl);
+                setShowSettings(false);
+                alert("網址已更新！");
+            };
+
+            const testConnection = async () => {
+                setLoading(true);
+                setErrorMsg("");
+                try {
+                    const res = await fetch(apiUrl);
+                    const text = await res.text();
+                    if (res.ok) alert("✅ 連線成功！\n後端回應: " + text);
+                    else alert("❌ 連線失敗: " + res.status);
+                } catch (err) {
+                    alert("❌ 無法連線到後端！\n請檢查網址是否正確，或 Render 是否正在喚醒中(需等1分鐘)。\n錯誤: " + err.message);
+                } finally {
+                    setLoading(false);
                 }
             };
 
             const handleCreateGroup = async (url) => {
                 setLoading(true);
+                setErrorMsg("");
                 try {
-                    // 1. 分析菜單
-                    const analyzeRes = await fetch(`${API_BASE_URL}/api/analyze_menu`, {
+                    // 1. 分析
+                    const analyzeRes = await fetch(`${apiUrl}/api/analyze_menu`, {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify({ url })
                     });
+                    
+                    if (!analyzeRes.ok) throw new Error(`分析失敗 (${analyzeRes.status})`);
                     const restaurantData = await analyzeRes.json();
 
-                    // 2. 建立團購
-                    const createRes = await fetch(`${API_BASE_URL}/api/create_group`, {
+                    // 2. 開團
+                    const createRes = await fetch(`${apiUrl}/api/create_group`, {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify({ restaurant: restaurantData })
                     });
+                    
+                    if (!createRes.ok) throw new Error("建立團購失敗");
                     const { group_id } = await createRes.json();
 
-                    // 3. 完成
                     setGroupId(group_id);
                     setGroupData({ restaurant: restaurantData, orders: [], status: 'OPEN' });
-                    
-                    // 更新網址但不重新整理
                     window.history.pushState({}, '', `?group_id=${group_id}&view=admin`);
                     setView('admin');
                 } catch (err) {
-                    alert("開團失敗，請檢查後端是否正常運作。\n" + err);
+                    setErrorMsg(err.message + "\n(若 Render 休眠中，請稍等1分鐘再試一次)");
                 } finally {
                     setLoading(false);
                 }
@@ -125,93 +151,112 @@
             const handleSubmitOrder = async () => {
                 if (!groupId) return;
                 const newItems = [];
-                const menu = groupData.restaurant.menu;
-                
                 Object.keys(cart).forEach(itemId => {
-                    const item = menu.find(m => m.id === parseInt(itemId));
+                    const item = groupData.restaurant.menu.find(m => m.id === parseInt(itemId));
                     if (item) newItems.push({ ...item, qty: cart[itemId] });
                 });
 
-                const orderPayload = {
-                    id: Date.now(),
-                    user: myName,
-                    items: newItems,
-                    paidAmount: 0,
-                    status: 'unpaid',
-                    note: orderNote
-                };
-
                 try {
-                    await fetch(`${API_BASE_URL}/api/group/${groupId}/order`, {
+                    const res = await fetch(`${apiUrl}/api/group/${groupId}/order`, {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify(orderPayload)
+                        body: JSON.stringify({
+                            id: Date.now(),
+                            user: myName,
+                            items: newItems,
+                            paidAmount: 0,
+                            status: 'unpaid',
+                            note: orderNote
+                        })
                     });
-                    alert(`訂單已送出！\n訂購人：${myName}`);
+                    if(!res.ok) throw new Error("送出失敗");
+                    
+                    alert(`✅ 訂單已送出！\n訂購人：${myName}`);
                     setCart({});
                     setOrderNote("");
-                    fetchGroupData(groupId); // 馬上更新
+                    fetchGroupData(groupId, apiUrl);
                 } catch (err) {
-                    alert("送出失敗");
+                    alert("❌ 送出失敗，請重試");
                 }
             };
 
             const handleStatusChange = async (newStatus) => {
                 try {
-                    await fetch(`${API_BASE_URL}/api/group/${groupId}/status`, {
+                    await fetch(`${apiUrl}/api/group/${groupId}/status`, {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify({ status: newStatus })
                     });
-                    // 手動更新本地狀態以求即時反應
                     setGroupData(prev => ({ ...prev, status: newStatus }));
                 } catch (err) {
                     alert("更新狀態失敗");
                 }
             };
 
-            // ---------------- 邏輯小工具 ----------------
-
-            const addToCart = (id) => setCart(prev => ({ ...prev, [id]: (prev[id] || 0) + 1 }));
-            const removeFromCart = (id) => setCart(prev => {
-                const newState = { ...prev };
-                if (newState[id] > 1) newState[id]--;
-                else delete newState[id];
-                return newState;
-            });
-
-            const submitName = (name) => {
-                if (!name.trim()) return;
-                setMyName(name);
-                localStorage.setItem('userName', name);
-                setIsNameModalOpen(false);
-                handleSubmitOrder();
-            };
+            // --- UI Components ---
 
             const copyLink = () => {
-                // 產生乾淨的連結 (預設進入 order 頁面)
                 const url = `${window.location.origin}${window.location.pathname}?group_id=${groupId}&view=order`;
-                navigator.clipboard.writeText(url).then(() => alert("✅ 網址已複製！\n請貼到 LINE 群組給同事。"));
+                navigator.clipboard.writeText(url).then(() => alert("✅ 網址已複製！"));
             };
 
             const copyText = (text) => {
                 navigator.clipboard.writeText(text).then(() => alert("✅ 文字已複製！"));
             };
 
-            // ---------------- 畫面渲染 ----------------
+            // 購物車邏輯
+            const addToCart = (id) => setCart(prev => ({ ...prev, [id]: (prev[id] || 0) + 1 }));
+            const removeFromCart = (id) => setCart(prev => {
+                const n = { ...prev };
+                if (n[id] > 1) n[id]--; else delete n[id];
+                return n;
+            });
+            const totalQty = Object.values(cart).reduce((a, b) => a + b, 0);
+            const totalPrice = groupData ? Object.keys(cart).reduce((sum, id) => {
+                const item = groupData.restaurant.menu.find(m => m.id === parseInt(id));
+                return sum + (item ? item.price * cart[id] : 0);
+            }, 0) : 0;
 
-            // 1. 首頁
+            // --- Pages ---
+
+            if (showSettings) {
+                return (
+                    <div className="mobile-container p-6">
+                        <h2 className="text-xl font-bold mb-4">⚙️ 設定後端網址</h2>
+                        <p className="text-sm text-gray-500 mb-2">如果開團一直失敗，請檢查這裡的網址是否正確。</p>
+                        <input 
+                            type="text" 
+                            value={apiUrl} 
+                            onChange={(e) => setApiUrl(e.target.value)}
+                            className="w-full p-3 border rounded mb-4 text-sm"
+                        />
+                        <div className="flex gap-2">
+                            <button onClick={testConnection} className="flex-1 bg-blue-500 text-white py-2 rounded">測試連線</button>
+                            <button onClick={handleSaveSettings} className="flex-1 bg-green-500 text-white py-2 rounded">儲存並返回</button>
+                        </div>
+                        <button onClick={() => setShowSettings(false)} className="mt-4 text-gray-500 underline w-full">取消</button>
+                        
+                        <div className="mt-8 p-4 bg-gray-100 rounded text-xs text-gray-600 break-all">
+                            <p className="font-bold">目前的後端網址：</p>
+                            {apiUrl}
+                        </div>
+                    </div>
+                );
+            }
+
             if (view === 'landing') {
                 return (
                     <div className="mobile-container">
-                        <div className="bg-orange-500 text-white p-4 sticky top-0 z-50 shadow-md flex justify-between">
-                            <h1 className="font-bold text-lg">🍱 辦公室訂便當</h1>
+                        <div className="bg-orange-500 text-white p-4 flex justify-between items-center shadow-md">
+                            <h1 className="font-bold text-lg">🍱 訂便當系統</h1>
+                            <button onClick={() => setShowSettings(true)} className="text-white opacity-80"><i className="fa-solid fa-gear"></i></button>
                         </div>
-                        <div className="p-6 flex flex-col items-center justify-center flex-1">
+                        <div className="p-6 flex flex-col items-center justify-center flex-1 animate-fade-in">
                             <div className="text-6xl mb-4">🍱</div>
                             <h2 className="text-2xl font-bold text-gray-800 mb-2">今天吃什麼？</h2>
                             <p className="text-gray-500 text-center mb-8">貼上 Google Maps，AI 幫你開團！</p>
-                            <button onClick={() => setView('create')} className="w-full bg-orange-500 text-white py-4 rounded-xl font-bold shadow-lg text-lg">
+                            
+                            <button onClick={() => setView('create')} className="w-full bg-orange-500 text-white py-4 rounded-xl font-bold shadow-lg text-lg mb-4 active:scale-95 transition-transform">
                                 ➕ 我要開團
                             </button>
                         </div>
@@ -219,63 +264,69 @@
                 );
             }
 
-            // 2. 開團頁
             if (view === 'create') {
                 return (
                     <div className="mobile-container">
-                        <div className="bg-orange-500 text-white p-4 sticky top-0 z-50 shadow-md flex items-center gap-2">
-                            <button onClick={() => setView('landing')}>⬅️</button>
+                        <div className="bg-orange-500 text-white p-4 flex items-center gap-2 shadow-md">
+                            <button onClick={() => setView('landing')}><i className="fa-solid fa-arrow-left"></i></button>
                             <h1 className="font-bold text-lg">建立新團購</h1>
                         </div>
                         <div className="p-6">
                             <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                                <h2 className="font-bold text-xl mb-4">📍 貼上餐廳網址</h2>
+                                <h2 className="font-bold text-xl mb-4 text-gray-800">📍 貼上餐廳網址</h2>
                                 <form onSubmit={(e) => { e.preventDefault(); handleCreateGroup(e.target.url.value); }}>
                                     <input name="url" type="text" defaultValue="https://maps.app.goo.gl/example" 
                                         className="w-full p-4 border rounded-xl bg-gray-50 mb-4 focus:ring-2 focus:ring-orange-500 outline-none" placeholder="Google Maps 連結..." />
-                                    <button type="submit" disabled={loading} className="w-full bg-orange-500 text-white py-3 rounded-xl font-bold shadow-md">
-                                        {loading ? "⌛ AI 分析中..." : "📷 AI 智慧開團"}
+                                    
+                                    {errorMsg && (
+                                        <div className="mb-4 p-3 bg-red-50 text-red-600 text-xs rounded border border-red-100">
+                                            ❌ {errorMsg}
+                                        </div>
+                                    )}
+
+                                    <button type="submit" disabled={loading} className="w-full bg-orange-500 text-white py-3 rounded-xl font-bold shadow-md disabled:bg-gray-400 flex justify-center items-center gap-2">
+                                        {loading ? <span><i className="fa-solid fa-circle-notch fa-spin"></i> AI 分析中 (約需10-20秒)...</span> : <span>📷 AI 智慧開團</span>}
                                     </button>
                                 </form>
-                                <p className="text-xs text-gray-400 mt-4 text-center">系統將自動抓取 Google Maps 上的資訊</p>
+                                <p className="text-xs text-gray-400 mt-4 text-center">若 Render 休眠中，首次啟動可能需要 1-2 分鐘</p>
                             </div>
                         </div>
                     </div>
                 );
             }
 
-            const restaurant = groupData?.restaurant || DEFAULT_RESTAURANT;
-            const orders = groupData?.orders || [];
-            const isClosed = groupData?.status === 'CLOSED';
+            // 載入中
+            if (!groupData) return (
+                <div className="mobile-container items-center justify-center">
+                    <i className="fa-solid fa-spinner fa-spin text-4xl text-orange-500"></i>
+                    <p className="mt-2 text-gray-500">載入訂單資料中...</p>
+                </div>
+            );
 
-            // 3. 點餐頁
+            const { restaurant, orders, status } = groupData;
+            const isClosed = status === 'CLOSED';
+
             if (view === 'order') {
-                if (!groupData) return <div className="p-10 text-center">載入中...</div>;
                 if (isClosed) return (
                     <div className="mobile-container items-center justify-center p-8 text-center">
                         <div className="text-6xl mb-4">🔒</div>
                         <h2 className="text-xl font-bold text-gray-600">團購已截止</h2>
-                        <p className="text-gray-500 mt-2">下次請早點來！</p>
                         <button onClick={() => setView('landing')} className="mt-8 text-orange-500 font-bold">回首頁</button>
                     </div>
                 );
 
-                const totalQty = Object.values(cart).reduce((a, b) => a + b, 0);
-                const totalPrice = Object.keys(cart).reduce((sum, id) => {
-                    const item = restaurant.menu.find(m => m.id === parseInt(id));
-                    return sum + (item.price * cart[id]);
-                }, 0);
-
                 return (
                     <div className="mobile-container relative">
-                        {/* 姓名輸入彈窗 */}
                         {isNameModalOpen && (
                             <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
-                                <div className="bg-white p-6 rounded-2xl w-full max-w-sm shadow-2xl">
+                                <div className="bg-white p-6 rounded-2xl w-full max-w-sm shadow-2xl animate-fade-in">
                                     <h3 className="font-bold text-xl mb-4 text-center">請問您是哪位？</h3>
                                     <input autoFocus type="text" placeholder="輸入名字" className="w-full p-3 border rounded-lg mb-4 text-lg text-center outline-none"
-                                        onKeyDown={(e) => e.key === 'Enter' && submitName(e.target.value)} onBlur={(e) => e.target.value && setMyName(e.target.value)} />
-                                    <button onClick={(e) => submitName(e.target.previousSibling.value)} className="w-full bg-orange-500 text-white py-3 rounded-xl font-bold">確定</button>
+                                        onBlur={(e) => e.target.value && setMyName(e.target.value)} />
+                                    <button onClick={(e) => {
+                                        const val = e.target.previousSibling.value;
+                                        if(val) { setMyName(val); localStorage.setItem('userName', val); setIsNameModalOpen(false); handleSubmitOrder(); }
+                                    }} className="w-full bg-orange-500 text-white py-3 rounded-xl font-bold">確定</button>
                                 </div>
                             </div>
                         )}
@@ -283,10 +334,10 @@
                         <div className="bg-white p-4 shadow-sm sticky top-0 z-10 flex justify-between items-start">
                             <div>
                                 <h2 className="font-bold text-lg">{restaurant.name}</h2>
-                                <div className="text-sm text-gray-500">📍 {restaurant.address}</div>
+                                <div className="text-sm text-gray-500">📍 {restaurant.address || "地址未知"}</div>
                             </div>
                             <button onClick={() => setIsNameModalOpen(true)} className="text-xs bg-gray-100 px-2 py-1 rounded-full text-gray-600">
-                                👤 {myName || "未登入"}
+                                <i className="fa-solid fa-user"></i> {myName || "未登入"}
                             </button>
                         </div>
 
@@ -300,11 +351,11 @@
                                     <div className="flex items-center gap-3">
                                         {cart[item.id] > 0 && (
                                             <>
-                                                <button onClick={() => removeFromCart(item.id)} className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-gray-600">➖</button>
+                                                <button onClick={() => removeFromCart(item.id)} className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-gray-600"><i className="fa-solid fa-minus"></i></button>
                                                 <span className="font-bold w-4 text-center">{cart[item.id]}</span>
                                             </>
                                         )}
-                                        <button onClick={() => addToCart(item.id)} className="w-8 h-8 rounded-full bg-orange-500 flex items-center justify-center text-white shadow-sm">➕</button>
+                                        <button onClick={() => addToCart(item.id)} className="w-8 h-8 rounded-full bg-orange-500 flex items-center justify-center text-white shadow-sm"><i className="fa-solid fa-plus"></i></button>
                                     </div>
                                 </div>
                             ))}
@@ -313,7 +364,7 @@
                         {totalQty > 0 && (
                             <div className="fixed bottom-0 left-0 right-0 bg-white border-t p-4 shadow-[0_-5px_20px_rgba(0,0,0,0.1)] z-20 max-w-[480px] mx-auto">
                                 <div className="bg-gray-50 p-2 rounded-lg flex items-center gap-2 border border-gray-200 mb-3">
-                                    <span>💬</span>
+                                    <i className="fa-regular fa-comment-dots text-gray-400"></i>
                                     <input type="text" value={orderNote} onChange={(e) => setOrderNote(e.target.value)} placeholder="備註 (如: 不要香菜)" className="bg-transparent w-full text-sm outline-none" />
                                 </div>
                                 <div className="flex justify-between items-center">
@@ -329,34 +380,28 @@
                 );
             }
 
-            // 4. 管理後台
             if (view === 'admin') {
-                if (!groupData) return <div className="p-10 text-center">載入中...</div>;
-                
                 const totalAmount = orders.reduce((sum, o) => sum + o.items.reduce((s, i) => s + i.price * i.qty, 0), 0);
                 const isTarget = totalAmount >= restaurant.minDelivery;
-
-                // 統計清單
+                
                 const summary = {};
                 orders.forEach(o => {
                     o.items.forEach(i => {
-                        const note = o.note || "";
                         if (!summary[i.id]) summary[i.id] = { name: i.name, qty: 0, notes: {} };
                         summary[i.id].qty += i.qty;
-                        if (note) summary[i.id].notes[note] = (summary[i.id].notes[note] || 0) + i.qty;
+                        if (o.note) summary[i.id].notes[o.note] = (summary[i.id].notes[o.note] || 0) + i.qty;
                     });
                 });
 
                 return (
                     <div className="mobile-container">
                         <div className="bg-gray-800 text-white p-4 sticky top-0 z-50 shadow-md flex justify-between items-center">
-                            <button onClick={() => setView('landing')} className="text-gray-400">🏠</button>
+                            <button onClick={() => setView('landing')} className="text-gray-400"><i className="fa-solid fa-house"></i></button>
                             <h1 className="font-bold text-lg">團購後台</h1>
                             <div className="w-6"></div>
                         </div>
 
                         <div className="p-4 space-y-4">
-                            {/* 狀態卡片 */}
                             <div className={`rounded-2xl p-6 text-white shadow-lg ${isClosed ? 'bg-gray-600' : 'bg-gradient-to-r from-orange-500 to-red-500'}`}>
                                 <div className="flex justify-between items-start mb-4">
                                     <div>
@@ -368,32 +413,30 @@
                                     </div>
                                 </div>
                                 <div className="flex gap-4 border-t border-white/20 pt-4 text-sm">
-                                    <span>👥 {orders.length} 人</span>
-                                    <span>⏰ {isClosed ? '已結單' : '進行中'}</span>
+                                    <span><i className="fa-solid fa-user-group"></i> {orders.length} 人</span>
+                                    <span><i className="fa-solid fa-clock"></i> {isClosed ? '已結單' : '進行中'}</span>
                                 </div>
                             </div>
 
-                            {/* 按鈕區 */}
                             <button onClick={copyLink} className="w-full bg-white border border-gray-300 py-3 rounded-xl text-gray-700 font-bold flex items-center justify-center gap-2 shadow-sm">
-                                🔗 複製團購網址 (傳給同事)
+                                <i className="fa-solid fa-link"></i> 複製團購網址
                             </button>
 
                             {!isClosed ? (
                                 <button onClick={() => { handleStatusChange('CLOSED'); copyText(`【團購截止】\n總金額：$${totalAmount}\n請準備付款！`); }} 
                                     className="w-full bg-gray-800 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-md">
-                                    🔒 結單並複製通知
+                                    <i className="fa-solid fa-lock"></i> 結單並複製通知
                                 </button>
                             ) : (
                                 <button onClick={() => copyText(`📢 便當到囉！\n總金額：$${totalAmount}\n快來領取！`)} 
                                     className="w-full bg-green-600 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-md animate-pulse">
-                                    🔔 複製「便當到了」通知
+                                    <i className="fa-solid fa-bell"></i> 複製「便當到了」通知
                                 </button>
                             )}
 
-                            {/* 統計表 */}
                             <div className="bg-white p-4 rounded-xl shadow-sm border border-orange-100 mt-4">
                                 <div className="flex justify-between border-b pb-2 mb-2 font-bold text-gray-700">
-                                    <h3>📞 向店家點餐</h3>
+                                    <h3><i className="fa-solid fa-phone"></i> 向店家點餐</h3>
                                     <a href={`tel:${restaurant.phone}`} className="text-orange-600 underline">{restaurant.phone}</a>
                                 </div>
                                 {Object.values(summary).map((item, idx) => (
@@ -409,7 +452,6 @@
                                 ))}
                             </div>
 
-                            {/* 明細 */}
                             <div className="space-y-3 mt-4">
                                 <h3 className="font-bold text-gray-700">明細</h3>
                                 {orders.map(o => {
@@ -429,7 +471,7 @@
                     </div>
                 );
             }
-            return <div>Loading...</div>;
+            return <div></div>;
         }
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
