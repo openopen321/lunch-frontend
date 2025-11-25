@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>訂便當系統 (圖片版)</title>
+    <title>訂便當系統 (截圖版)</title>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -12,6 +12,16 @@
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f3f4f6; }
         .mobile-container { max-width: 480px; margin: 0 auto; min-height: 100vh; background: white; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); display: flex; flex-direction: column; }
+        /* 貼上區域的樣式 */
+        .paste-area {
+            border: 2px dashed #f97316;
+            background-color: #fff7ed;
+            transition: all 0.3s;
+        }
+        .paste-area:hover, .paste-area.dragging {
+            background-color: #ffedd5;
+            border-color: #ea580c;
+        }
     </style>
 </head>
 <body>
@@ -35,7 +45,7 @@
             const [orderNote, setOrderNote] = useState("");
             const [isNameModalOpen, setIsNameModalOpen] = useState(false);
             
-            const fileInputRef = useRef(null);
+            const pasteAreaRef = useRef(null);
 
             useEffect(() => {
                 const savedName = localStorage.getItem('userName');
@@ -50,7 +60,23 @@
                     fetchGroupData(urlGroupId, savedUrl || DEFAULT_API_URL);
                     setView(params.get('view') === 'admin' ? 'admin' : 'order');
                 }
-            }, []);
+
+                // 全域監聽貼上事件
+                const handlePaste = (e) => {
+                    if (view !== 'landing') return; // 只在首頁監聽
+                    const items = e.clipboardData.items;
+                    for (let i = 0; i < items.length; i++) {
+                        if (items[i].type.indexOf("image") !== -1) {
+                            const blob = items[i].getAsFile();
+                            processImageFile(blob);
+                            e.preventDefault();
+                            break;
+                        }
+                    }
+                };
+                window.addEventListener('paste', handlePaste);
+                return () => window.removeEventListener('paste', handlePaste);
+            }, [view]); // 當 view 改變時重新綁定
 
             useEffect(() => {
                 if (!groupId) return;
@@ -66,17 +92,14 @@
             };
 
             // --- 圖片處理核心 ---
-            const handleImageUpload = (e) => {
-                const file = e.target.files[0];
+            const processImageFile = (file) => {
                 if (!file) return;
-
                 setLoading(true);
                 setErrorMsg("");
 
                 const reader = new FileReader();
                 reader.onloadend = async () => {
                     try {
-                        // 取得 Base64 字串 (移除開頭的 data:image/xxx;base64,)
                         const base64String = reader.result.split(',')[1];
                         const mimeType = file.type;
 
@@ -87,7 +110,11 @@
                             body: JSON.stringify({ image: base64String, mime_type: mimeType })
                         });
 
-                        if (!analyzeRes.ok) throw new Error("圖片分析失敗 (請檢查 API Key 或網路)");
+                        if (!analyzeRes.ok) {
+                            const errText = await analyzeRes.text();
+                            throw new Error(`分析失敗: ${analyzeRes.status} ${errText}`);
+                        }
+                        
                         const restaurantData = await analyzeRes.json();
 
                         if (restaurantData.name && restaurantData.name.includes("錯誤")) {
@@ -108,7 +135,8 @@
                         setView('admin');
 
                     } catch (err) {
-                        setErrorMsg(err.message);
+                        console.error(err);
+                        setErrorMsg(err.message || "發生未知錯誤");
                     } finally {
                         setLoading(false);
                     }
@@ -153,21 +181,53 @@
             if (view === 'landing') return (
                 <div className="mobile-container">
                     <div className="bg-orange-500 text-white p-4 flex justify-between items-center shadow-md">
-                        <h1 className="font-bold text-lg">🍱 拍菜單開團</h1>
+                        <h1 className="font-bold text-lg">🍱 截圖開團</h1>
                         <button onClick={() => setShowSettings(true)} className="text-white"><i className="fa-solid fa-gear"></i></button>
                     </div>
                     <div className="p-6 flex flex-col items-center justify-center flex-1">
-                        <div className="text-6xl mb-4">📸</div>
-                        <h2 className="text-2xl font-bold text-gray-800 mb-2">今天吃什麼？</h2>
-                        <p className="text-gray-500 text-center mb-8">拍下菜單，AI 幫你自動辨識開團！</p>
+                        {/* 貼上區域 */}
+                        <div 
+                            ref={pasteAreaRef}
+                            className="paste-area w-full h-64 rounded-2xl flex flex-col items-center justify-center text-center cursor-pointer mb-6 p-4"
+                            onClick={async () => {
+                                try {
+                                    const clipboardItems = await navigator.clipboard.read();
+                                    for (const clipboardItem of clipboardItems) {
+                                        for (const type of clipboardItem.types) {
+                                            if (type.startsWith('image/')) {
+                                                const blob = await clipboardItem.getType(type);
+                                                processImageFile(blob);
+                                                return;
+                                            }
+                                        }
+                                    }
+                                    alert("剪貼簿裡沒有圖片喔！請先截圖或複製圖片。");
+                                } catch (err) {
+                                    // 如果瀏覽器不支援直接讀取剪貼簿 API，提示用 Ctrl+V
+                                    alert("請直接按 Ctrl+V (或 Command+V) 貼上圖片！");
+                                }
+                            }}
+                        >
+                            {loading ? (
+                                <div className="flex flex-col items-center text-orange-500">
+                                    <i className="fa-solid fa-circle-notch fa-spin text-4xl mb-2"></i>
+                                    <span className="font-bold">AI 正在讀取菜單中...</span>
+                                </div>
+                            ) : (
+                                <>
+                                    <i className="fa-solid fa-paste text-4xl text-orange-400 mb-2"></i>
+                                    <h3 className="text-xl font-bold text-gray-700 mb-1">點擊貼上截圖</h3>
+                                    <p className="text-sm text-gray-500">或直接按 Ctrl + V</p>
+                                </>
+                            )}
+                        </div>
+
+                        {errorMsg && <div className="text-red-500 text-xs text-center px-4 mb-4 bg-red-50 p-2 rounded w-full">{errorMsg}</div>}
                         
-                        <input type="file" accept="image/*" ref={fileInputRef} className="hidden" onChange={handleImageUpload} />
-                        
-                        <button onClick={() => fileInputRef.current.click()} disabled={loading} className="w-full bg-orange-500 text-white py-4 rounded-xl font-bold shadow-lg text-lg mb-4 flex justify-center items-center gap-2">
-                            {loading ? <span><i className="fa-solid fa-circle-notch fa-spin"></i> 辨識中...</span> : <span><i className="fa-solid fa-camera"></i> 上傳菜單圖片</span>}
-                        </button>
-                        
-                        {errorMsg && <div className="text-red-500 text-xs text-center px-4">{errorMsg}</div>}
+                        <div className="text-xs text-gray-400 text-center">
+                            支援電腦截圖、手機截圖<br/>
+                            自動切換 Gemini Pro / Flash 模型
+                        </div>
                     </div>
                 </div>
             );
