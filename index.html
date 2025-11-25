@@ -41,8 +41,7 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
         
-        // 【重要】請將這裡改成您的 Render 後端網址
-        // 如果您不改，下方的程式碼會自動在 Vercel 上跳出提示請您輸入
+        // 預設後端網址 (Render)
         const DEFAULT_API_URL = "https://lunch-backend-iccv.onrender.com"; 
 
         function App() {
@@ -53,7 +52,7 @@
             const [showSettings, setShowSettings] = useState(false);
             const [testStatus, setTestStatus] = useState(""); 
             
-            // 強制設定 URL 的 Modal (針對 Vercel 部署但未設定 Render URL 的情況)
+            // 強制設定 URL 的 Modal
             const [showSetupModal, setShowSetupModal] = useState(false);
 
             const [groupId, setGroupId] = useState(null);
@@ -70,16 +69,15 @@
 
             // --- Effects ---
             useEffect(() => {
-                // 1. 讀取儲存的設定
                 const savedName = localStorage.getItem('userName');
                 let savedUrl = localStorage.getItem('apiUrl');
 
-                // 2. 自動偵測環境：如果是 Vercel/GitHub Pages 且網址還是 Localhost，強制跳出設定
+                // 自動偵測 Vercel 環境
                 const isProd = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
                 const isLocalApi = !savedUrl || savedUrl.includes('127.0.0.1') || savedUrl.includes('localhost');
 
                 if (isProd && isLocalApi) {
-                    setShowSetupModal(true); // 跳出強制設定視窗
+                    setShowSetupModal(true);
                 } else {
                     if (savedUrl) setApiUrl(savedUrl);
                     else setApiUrl(DEFAULT_API_URL);
@@ -87,12 +85,10 @@
 
                 if (savedName) setMyName(savedName);
 
-                // 3. 處理網址參數
                 const params = new URLSearchParams(window.location.search);
                 const urlGroupId = params.get('group_id');
                 const urlView = params.get('view');
                 
-                // 如果已經有 API URL，才開始載入資料
                 if (urlGroupId && (!isProd || !isLocalApi)) {
                     setGroupId(urlGroupId);
                     fetchGroupData(urlGroupId, savedUrl || DEFAULT_API_URL);
@@ -101,7 +97,6 @@
                     fetchSavedRestaurants(savedUrl || DEFAULT_API_URL);
                 }
 
-                // 4. 貼上事件
                 const handlePaste = (e) => {
                     if (view !== 'landing') return;
                     const items = e.clipboardData.items;
@@ -116,28 +111,67 @@
                 return () => window.removeEventListener('paste', handlePaste);
             }, [view]);
 
-            // 定時更新
             useEffect(() => {
                 if (!groupId) return;
                 const interval = setInterval(() => { fetchGroupData(groupId, apiUrl); }, 3000);
                 return () => clearInterval(interval);
             }, [groupId, apiUrl]);
 
+            // --- 增強版複製功能 ---
+            const handleCopyLink = () => {
+                const url = window.location.href.replace('view=admin', 'view=order');
+                
+                // 優先嘗試標準 API
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(url)
+                        .then(() => alert("✅ 連結已複製！\n您可以直接貼給同事"))
+                        .catch((err) => {
+                            console.error("Clipboard API failed", err);
+                            fallbackCopy(url); // 失敗則使用備用方案
+                        });
+                } else {
+                    fallbackCopy(url);
+                }
+            };
+
+            // 備用複製方案 (相容性更高)
+            const fallbackCopy = (text) => {
+                try {
+                    const textArea = document.createElement("textarea");
+                    textArea.value = text;
+                    // 避免在手機上跳出鍵盤
+                    textArea.style.position = "fixed";
+                    textArea.style.left = "-9999px";
+                    textArea.style.top = "0";
+                    document.body.appendChild(textArea);
+                    textArea.focus();
+                    textArea.select();
+                    
+                    const successful = document.execCommand('copy');
+                    document.body.removeChild(textArea);
+                    
+                    if (successful) {
+                        alert("✅ 連結已複製！\n您可以直接貼給同事");
+                    } else {
+                        throw new Error("Copy command failed");
+                    }
+                } catch (err) {
+                    // 如果真的都不行，跳出提示窗讓使用者自己複製
+                    prompt("無法自動複製，請手動複製以下網址：", text);
+                }
+            };
+
             // --- API Calls ---
             const testConnection = async (urlToTest) => {
                 const target = urlToTest || apiUrl;
                 setTestStatus("測試連線中...");
                 try {
-                    // 嘗試連線到 API 根目錄或 restaurants
                     const res = await fetch(`${target}/`);
-                    // 只要伺服器有回應 (不管是 200 還是 404)，代表連線是通的
-                    // 如果是 Failed to fetch，代表連線根本沒建立
                     setTestStatus("✅ 連線成功！");
                     if (!showSetupModal) fetchSavedRestaurants(target);
                     return true;
                 } catch (e) {
                     setTestStatus("❌ 無法連線 (請檢查 Render 網址)");
-                    console.error(e);
                     return false;
                 }
             };
@@ -247,9 +281,9 @@
                 return { summary, total };
             };
 
-            // --- Render Components ---
+            // --- UI Renders ---
             
-            // 強制設定 Modal
+            // 1. 強制設定 Modal
             if (showSetupModal) return (
                 <div className="fixed inset-0 bg-gray-900 z-[999] flex items-center justify-center p-6">
                     <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
@@ -258,38 +292,16 @@
                             <h2 className="text-2xl font-bold text-gray-800">首次設定後端連線</h2>
                             <p className="text-gray-500 mt-2 text-sm">偵測到您正在使用 Vercel，但尚未設定 Render 後端網址。</p>
                         </div>
-                        
                         <label className="block mb-2 font-bold text-gray-700 text-sm">請輸入 Render App 網址</label>
-                        <input 
-                            type="text" 
-                            value={apiUrl} 
-                            onChange={(e) => setApiUrl(e.target.value)} 
-                            className="w-full p-4 border-2 border-blue-100 rounded-xl mb-2 focus:border-blue-500 outline-none" 
-                            placeholder="例如 https://my-lunch-app.onrender.com" 
-                        />
+                        <input type="text" value={apiUrl} onChange={(e) => setApiUrl(e.target.value)} className="w-full p-4 border-2 border-blue-100 rounded-xl mb-2 focus:border-blue-500 outline-none" placeholder="例如 https://my-lunch-app.onrender.com" />
                         <p className="text-xs text-gray-400 mb-6">請到 Render Dashboard 複製您的 Service URL (以 https:// 開頭)</p>
-                        
-                        <div className="flex justify-between items-center mb-4 bg-gray-50 p-3 rounded-lg">
-                            <span className="text-sm font-bold text-gray-600">連線狀態：{testStatus || "等待測試"}</span>
-                            <button onClick={() => testConnection(apiUrl)} className="text-sm bg-white border px-3 py-1 rounded shadow-sm">測試</button>
-                        </div>
-
-                        <button 
-                            onClick={() => {
-                                if (!apiUrl.startsWith('http')) { alert("網址格式錯誤，請包含 https://"); return; }
-                                localStorage.setItem('apiUrl', apiUrl.replace(/\/$/, "")); 
-                                setShowSetupModal(false);
-                                fetchSavedRestaurants(apiUrl);
-                            }} 
-                            className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold text-lg shadow-lg hover:bg-blue-700 transition-colors"
-                        >
-                            儲存並開始使用
-                        </button>
+                        <div className="flex justify-between items-center mb-4 bg-gray-50 p-3 rounded-lg"><span className="text-sm font-bold text-gray-600">連線狀態：{testStatus || "等待測試"}</span><button onClick={() => testConnection(apiUrl)} className="text-sm bg-white border px-3 py-1 rounded shadow-sm">測試</button></div>
+                        <button onClick={() => { if (!apiUrl.startsWith('http')) { alert("網址格式錯誤，請包含 https://"); return; } localStorage.setItem('apiUrl', apiUrl.replace(/\/$/, "")); setShowSetupModal(false); fetchSavedRestaurants(apiUrl); }} className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold text-lg shadow-lg hover:bg-blue-700 transition-colors">儲存並開始使用</button>
                     </div>
                 </div>
             );
 
-            // 一般設定
+            // 2. 一般設定
             if (showSettings) return (
                 <div className="mobile-container p-6 bg-gray-50">
                     <div className="flex justify-between items-center mb-6"><h2 className="text-xl font-bold">設定</h2><button onClick={()=>setShowSettings(false)}><i className="fa-solid fa-times text-xl"></i></button></div>
@@ -300,7 +312,7 @@
                 </div>
             );
 
-            // Landing
+            // 3. Landing (首頁)
             if (view === 'landing') return (
                 <div className="mobile-container">
                     <div className="bg-gradient-to-r from-orange-500 to-red-500 text-white p-5 flex justify-between items-center shadow-md">
@@ -329,7 +341,7 @@
             if (!groupData) return <div className="mobile-container items-center justify-center"><i className="fa-solid fa-spinner fa-spin text-3xl text-orange-500"></i></div>;
             const { restaurant, orders, status } = groupData;
 
-            // Order
+            // 4. Order (點餐頁)
             if (view === 'order') {
                 if (status === 'CLOSED') return (<div className="mobile-container items-center justify-center p-8 text-center bg-gray-50"><i className="fa-solid fa-lock text-4xl text-gray-400 mb-4"></i><h2 className="text-2xl font-bold text-gray-700">本團已截止</h2><button onClick={() => setView('landing')} className="mt-6 text-orange-500 font-bold">回首頁</button></div>);
                 const cartTotal = cartItems.reduce((s, i) => s + i.price, 0);
@@ -344,16 +356,65 @@
                 );
             }
 
-            // Admin
+            // 5. Admin (後台)
             if (view === 'admin') {
                 const { summary, total } = getStats();
                 return (
                     <div className="mobile-container bg-gray-50">
-                        <div className="bg-gray-900 text-white p-4 flex justify-between items-center sticky top-0 z-20 shadow-md"><button onClick={() => setView('landing')} className="text-gray-400"><i className="fa-solid fa-chevron-left mr-1"></i>首頁</button><h1 className="font-bold text-lg">團購管理</h1><div className="w-14"></div></div>
+                        <div className="bg-gray-900 text-white p-4 flex justify-between items-center sticky top-0 z-20 shadow-md">
+                            <button onClick={() => setView('landing')} className="text-gray-400"><i className="fa-solid fa-chevron-left mr-1"></i>首頁</button>
+                            <h1 className="font-bold text-lg">團購管理</h1>
+                            <div className="w-14"></div> 
+                        </div>
+
                         <div className="p-4 space-y-6 pb-20 overflow-y-auto">
-                            <div className="grid grid-cols-2 gap-3"><button onClick={() => navigator.clipboard.writeText(window.location.href.replace('view=admin', 'view=order')).then(() => alert("連結已複製"))} className="col-span-2 bg-white border py-3 rounded-xl font-bold shadow-sm text-blue-600"><i className="fa-solid fa-link mr-1"></i> 複製訂餐連結</button>{status !== 'CLOSED' ? (<button onClick={() => { if(confirm('確定結單？')) { fetch(`${apiUrl}/api/group/${groupId}/status`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:'CLOSED'})}); setGroupData({...groupData, status: 'CLOSED'}); }}} className="col-span-2 bg-red-500 text-white py-3 rounded-xl font-bold shadow-md"><i className="fa-solid fa-lock mr-1"></i> 鎖定結單</button>) : <div className="col-span-2 bg-gray-200 text-gray-500 py-3 rounded-xl font-bold text-center">已結單</div>}</div>
-                            <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100"><div className="flex justify-between items-center border-b pb-3 mb-3"><h3 className="font-bold text-gray-800">📋 統計表</h3><a href={`tel:${restaurant.phone}`} className="text-sm bg-green-100 text-green-700 px-3 py-1 rounded-full"><i className="fa-solid fa-phone mr-1"></i>撥號</a></div>{Object.values(summary).map((item, idx) => (<div key={idx} className="mb-2"><div className="flex justify-between font-bold"><span>{item.name}</span><span>x {item.qty}</span></div>{Object.entries(item.notes).map(([note, count], nIdx) => <div key={nIdx} className="text-sm text-gray-500 pl-2 flex justify-between"><span>- {note}</span><span>x{count}</span></div>)}</div>))}<div className="mt-4 pt-3 border-t flex justify-between font-bold text-xl"><span>總金額</span><span>${total}</span></div></div>
-                            <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100"><h3 className="font-bold text-gray-800 mb-4">💰 收款與訂單</h3><div className="space-y-3">{orders.map(o => {const orderTotal = o.items.reduce((s,i)=>s+i.price*i.qty,0);const balance = (o.paidAmount || 0) - orderTotal;return (<div key={o.id} className="p-3 rounded-xl border bg-white relative group"><button onClick={() => handleDeleteOrder(o.id)} className="absolute top-2 right-2 text-gray-300 hover:text-red-500 p-1"><i className="fa-solid fa-trash-can"></i></button><div className="flex justify-between mb-1 pr-6"><span className="font-bold text-lg">{o.user}</span><span className="font-bold">${orderTotal}</span></div><div className="text-xs text-gray-500 mb-2">{o.items.map(i => `${i.name}${i.note?'('+i.note+')':''}`).join(', ')}</div><div className="flex items-center justify-between bg-gray-50 p-2 rounded"><div className="flex items-center gap-2 text-sm text-gray-600">已付: <input type="number" value={o.paidAmount || ''} onChange={(e) => handlePaymentUpdate(o.id, e.target.value)} className="w-16 p-1 border rounded text-center" placeholder="0" /></div><span className={`font-bold ${balance >= 0 ? 'text-green-600' : 'text-red-500'}`}>{balance >= 0 ? (balance>0?`找: $${balance}`:'OK') : `欠: $${Math.abs(balance)}`}</span></div></div>);})}</div></div>
+                            {/* 修改處：分開的按鈕，確保一定能操作 */}
+                            <div className="grid grid-cols-2 gap-3">
+                                <button onClick={handleCopyLink} className="bg-white border py-3 rounded-xl font-bold shadow-sm text-blue-600 active:bg-blue-50">
+                                    <i className="fa-solid fa-copy mr-1"></i> 複製連結
+                                </button>
+                                <button onClick={() => window.open(window.location.href.replace('view=admin', 'view=order'), '_blank')} className="bg-white border py-3 rounded-xl font-bold shadow-sm text-green-600 active:bg-green-50">
+                                    <i className="fa-solid fa-arrow-up-right-from-square mr-1"></i> 開啟頁面
+                                </button>
+                                
+                                {status !== 'CLOSED' ? (
+                                    <button onClick={() => { if(confirm('確定結單？')) { fetch(`${apiUrl}/api/group/${groupId}/status`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:'CLOSED'})}); setGroupData({...groupData, status: 'CLOSED'}); }}} className="col-span-2 bg-red-500 text-white py-3 rounded-xl font-bold shadow-md"><i className="fa-solid fa-lock mr-1"></i> 鎖定結單</button>
+                                ) : <div className="col-span-2 bg-gray-200 text-gray-500 py-3 rounded-xl font-bold text-center">已結單</div>}
+                            </div>
+
+                            {/* 統計 */}
+                            <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+                                <div className="flex justify-between items-center border-b pb-3 mb-3"><h3 className="font-bold text-gray-800">📋 統計表</h3><a href={`tel:${restaurant.phone}`} className="text-sm bg-green-100 text-green-700 px-3 py-1 rounded-full"><i className="fa-solid fa-phone mr-1"></i>撥號</a></div>
+                                {Object.values(summary).map((item, idx) => (
+                                    <div key={idx} className="mb-2">
+                                        <div className="flex justify-between font-bold"><span>{item.name}</span><span>x {item.qty}</span></div>
+                                        {Object.entries(item.notes).map(([note, count], nIdx) => <div key={nIdx} className="text-sm text-gray-500 pl-2 flex justify-between"><span>- {note}</span><span>x{count}</span></div>)}
+                                    </div>
+                                ))}
+                                <div className="mt-4 pt-3 border-t flex justify-between font-bold text-xl"><span>總金額</span><span>${total}</span></div>
+                            </div>
+
+                            {/* 收款管理 */}
+                            <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+                                <h3 className="font-bold text-gray-800 mb-4">💰 收款與訂單</h3>
+                                <div className="space-y-3">
+                                    {orders.map(o => {
+                                        const orderTotal = o.items.reduce((s,i)=>s+i.price*i.qty,0);
+                                        const balance = (o.paidAmount || 0) - orderTotal;
+                                        return (
+                                            <div key={o.id} className="p-3 rounded-xl border bg-white relative group">
+                                                <button onClick={() => handleDeleteOrder(o.id)} className="absolute top-2 right-2 text-gray-300 hover:text-red-500 p-1"><i className="fa-solid fa-trash-can"></i></button>
+                                                <div className="flex justify-between mb-1 pr-6"><span className="font-bold text-lg">{o.user}</span><span className="font-bold">${orderTotal}</span></div>
+                                                <div className="text-xs text-gray-500 mb-2">{o.items.map(i => `${i.name}${i.note?'('+i.note+')':''}`).join(', ')}</div>
+                                                <div className="flex items-center justify-between bg-gray-50 p-2 rounded">
+                                                    <div className="flex items-center gap-2 text-sm text-gray-600">已付: <input type="number" value={o.paidAmount || ''} onChange={(e) => handlePaymentUpdate(o.id, e.target.value)} className="w-16 p-1 border rounded text-center" placeholder="0" /></div>
+                                                    <span className={`font-bold ${balance >= 0 ? 'text-green-600' : 'text-red-500'}`}>{balance >= 0 ? (balance>0?`找: $${balance}`:'OK') : `欠: $${Math.abs(balance)}`}</span>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
                         </div>
                     </div>
                 );
