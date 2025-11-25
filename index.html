@@ -39,7 +39,7 @@
             const [myName, setMyName] = useState("");
             const [isNameModalOpen, setIsNameModalOpen] = useState(false);
             
-            // 修正：這裡補上了 pasteAreaRef
+            // --- 修正：補上 pasteAreaRef 定義 ---
             const pasteAreaRef = useRef(null);
             const fileInputRef = useRef(null);
 
@@ -110,7 +110,6 @@
                 reader.readAsDataURL(file);
             };
 
-            // --- 付款更新功能 ---
             const handlePaymentUpdate = async (orderId, amount) => {
                 setGroupData(prev => ({
                     ...prev,
@@ -126,7 +125,6 @@
                 } catch (err) { console.error("更新付款失敗", err); }
             };
 
-            // --- 購物車與訂單 ---
             const addToCart = (item) => setCartItems(p => [...p, { uuid: Date.now()+Math.random(), itemId: item.id, name: item.name, price: item.price, note: "" }]);
             const updateItemNote = (uuid, t) => setCartItems(p => p.map(i => i.uuid===uuid ? {...i, note: t} : i));
             const removeCartItem = (uuid) => setCartItems(p => p.filter(i => i.uuid !== uuid));
@@ -144,7 +142,6 @@
                 } catch (err) { alert("送出失敗"); }
             };
 
-            // --- 統計邏輯 ---
             const getRestaurantSummary = () => {
                 if (!groupData) return {};
                 const summary = {};
