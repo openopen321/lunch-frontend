@@ -41,8 +41,7 @@
 
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
-        // 請確保這裡的網址與您後端運行的網址一致
-        // 本地測試通常是 http://127.0.0.1:5000
+        // 預設後端網址
         const DEFAULT_API_URL = "http://127.0.0.1:5000"; 
 
         function App() {
@@ -52,6 +51,7 @@
             const [errorMsg, setErrorMsg] = useState("");
             const [apiUrl, setApiUrl] = useState(DEFAULT_API_URL);
             const [showSettings, setShowSettings] = useState(false);
+            const [testStatus, setTestStatus] = useState(""); // 連線測試狀態
             
             const [groupId, setGroupId] = useState(null);
             const [groupData, setGroupData] = useState(null);
@@ -69,8 +69,11 @@
             useEffect(() => {
                 const savedName = localStorage.getItem('userName');
                 const savedUrl = localStorage.getItem('apiUrl');
+                // 優先使用 localStorage 的設定，若無則使用預設
+                const currentApiUrl = savedUrl || DEFAULT_API_URL;
+                
                 if (savedName) setMyName(savedName);
-                if (savedUrl) setApiUrl(savedUrl);
+                setApiUrl(currentApiUrl);
 
                 const params = new URLSearchParams(window.location.search);
                 const urlGroupId = params.get('group_id');
@@ -78,11 +81,11 @@
                 
                 if (urlGroupId) {
                     setGroupId(urlGroupId);
-                    fetchGroupData(urlGroupId, savedUrl || DEFAULT_API_URL);
+                    fetchGroupData(urlGroupId, currentApiUrl);
                     setView(urlView === 'admin' ? 'admin' : 'order');
                 } else {
                     // 如果在首頁，載入歷史餐廳
-                    fetchSavedRestaurants(savedUrl || DEFAULT_API_URL);
+                    fetchSavedRestaurants(currentApiUrl);
                 }
 
                 const handlePaste = (e) => {
@@ -99,25 +102,52 @@
                 return () => window.removeEventListener('paste', handlePaste);
             }, [view]);
 
+            // 定時更新
             useEffect(() => {
                 if (!groupId) return;
                 const interval = setInterval(() => { fetchGroupData(groupId, apiUrl); }, 3000);
                 return () => clearInterval(interval);
             }, [groupId, apiUrl]);
 
+            // --- Error Handling ---
+            const handleFetchError = (err) => {
+                console.error(err);
+                if (err.message === "Failed to fetch") {
+                    return "無法連線到後端伺服器 (Failed to fetch)。\n請確認：\n1. app.py 是否已執行？\n2. 設定中的 API 網址是否正確？";
+                }
+                return err.message;
+            };
+
             // --- API Calls ---
+            const testConnection = async () => {
+                setTestStatus("測試連線中...");
+                try {
+                    // 嘗試抓取歷史餐廳作為測試，或者直接抓根目錄
+                    const res = await fetch(`${apiUrl}/`);
+                    if (res.ok) {
+                        setTestStatus("✅ 連線成功！");
+                        // 順便重整歷史餐廳
+                        fetchSavedRestaurants(apiUrl);
+                    } else {
+                        setTestStatus("❌ 連線失敗 (伺服器有回應但錯誤)");
+                    }
+                } catch (e) {
+                    setTestStatus("❌ 無法連線 (Failed to fetch)");
+                }
+            };
+
             const fetchSavedRestaurants = async (url) => {
                 try {
                     const res = await fetch(`${url}/api/restaurants`);
                     if (res.ok) setSavedRestaurants(await res.json());
-                } catch(e) { console.log("無法載入歷史餐廳"); }
+                } catch(e) { console.log("無法載入歷史餐廳", e); }
             };
 
             const fetchGroupData = async (id, url) => {
                 try {
                     const res = await fetch(`${url}/api/group/${id}`);
                     if (res.ok) setGroupData(await res.json());
-                } catch (err) { console.error("無法連接後端", err); }
+                } catch (err) { console.error("Polling error", err); }
             };
 
             // 處理圖片上傳與 AI 分析
@@ -135,7 +165,10 @@
                         const data = await res.json();
                         if (!res.ok) throw new Error(data.name || "分析失敗");
                         startGroup(data); // 開團
-                    } catch (err) { setErrorMsg(err.message); setLoading(false); }
+                    } catch (err) { 
+                        setErrorMsg(handleFetchError(err)); 
+                        setLoading(false); 
+                    }
                 };
                 reader.readAsDataURL(file);
             };
@@ -154,8 +187,11 @@
                     const newUrl = `${window.location.pathname}?group_id=${group_id}&view=admin`;
                     window.history.pushState({}, '', newUrl);
                     setView('admin');
-                } catch (e) { setErrorMsg("開團失敗"); } 
-                finally { setLoading(false); }
+                } catch (e) { 
+                    setErrorMsg(handleFetchError(e)); 
+                } finally { 
+                    setLoading(false); 
+                }
             };
 
             const handlePaymentUpdate = async (orderId, amount) => {
@@ -168,16 +204,15 @@
                 } catch (err) { console.error(err); }
             };
 
-            // 【新功能】刪除訂單
+            // 刪除訂單
             const handleDeleteOrder = async (orderId) => {
                 if (!confirm("確定要刪除這筆訂單嗎？")) return;
                 try {
-                    // 樂觀更新 (先從畫面上移除)
                     setGroupData(prev => ({...prev, orders: prev.orders.filter(o => o.id !== orderId)}));
                     await fetch(`${apiUrl}/api/group/${groupId}/order/${orderId}`, { method: 'DELETE' });
                 } catch (err) { 
                     alert("刪除失敗"); 
-                    fetchGroupData(groupId, apiUrl); // 失敗則重新拉取資料
+                    fetchGroupData(groupId, apiUrl); 
                 }
             }
 
@@ -218,9 +253,27 @@
             if (showSettings) return (
                 <div className="mobile-container p-6 bg-gray-50">
                     <div className="flex justify-between items-center mb-6"><h2 className="text-xl font-bold">設定</h2><button onClick={()=>setShowSettings(false)}><i className="fa-solid fa-times text-xl"></i></button></div>
+                    
                     <label className="block mb-2 font-bold text-gray-700">後端 API 網址</label>
-                    <input type="text" value={apiUrl} onChange={(e)=>setApiUrl(e.target.value)} className="w-full p-3 border rounded-lg mb-4" />
-                    <button onClick={()=>{localStorage.setItem('apiUrl', apiUrl.replace(/\/$/, "")); setShowSettings(false);}} className="w-full bg-orange-500 text-white py-3 rounded-lg font-bold">儲存</button>
+                    <div className="flex gap-2 mb-2">
+                        <input type="text" value={apiUrl} onChange={(e)=>setApiUrl(e.target.value)} className="w-full p-3 border rounded-lg" placeholder="http://127.0.0.1:5000" />
+                    </div>
+                    
+                    <div className="flex justify-between items-center mb-6">
+                        <span className="text-sm text-gray-500">{testStatus}</span>
+                        <button onClick={testConnection} className="text-sm bg-gray-200 px-3 py-1 rounded text-gray-700">測試連線</button>
+                    </div>
+
+                    <button onClick={()=>{localStorage.setItem('apiUrl', apiUrl.replace(/\/$/, "")); setShowSettings(false);}} className="w-full bg-orange-500 text-white py-3 rounded-lg font-bold">儲存並返回</button>
+                    
+                    <div className="mt-8 p-4 bg-orange-50 rounded-xl text-xs text-gray-600">
+                        <h4 className="font-bold mb-2">無法連線 (Failed to fetch)？</h4>
+                        <ol className="list-decimal pl-4 space-y-1">
+                            <li>請確認有執行 <code className="bg-gray-200 px-1">python app.py</code></li>
+                            <li>確認終端機顯示的 Port 是 5000</li>
+                            <li>如果是部屬到 Render，請確認這裡的網址已更新為 Render 網址 (https://...)</li>
+                        </ol>
+                    </div>
                 </div>
             );
 
@@ -250,17 +303,26 @@
                                 )}
                             </div>
                             <input type="file" accept="image/*" ref={fileInputRef} className="hidden" onChange={(e) => processImageFile(e.target.files[0])} />
-                            {errorMsg && <div className="mt-2 text-red-500 text-sm bg-red-50 p-2 rounded">{errorMsg}</div>}
+                            
+                            {/* 錯誤訊息顯示區 (支援換行顯示) */}
+                            {errorMsg && (
+                                <div className="mt-4 text-red-600 text-sm bg-red-50 p-4 rounded-xl border border-red-100 flex items-start gap-3">
+                                    <i className="fa-solid fa-triangle-exclamation mt-1"></i>
+                                    <div style={{whiteSpace: 'pre-line'}}>{errorMsg}</div>
+                                </div>
+                            )}
                         </div>
 
-                        {/* 歷史餐廳列表 (功能 3) */}
+                        {/* 歷史餐廳列表 */}
                         <div>
                             <div className="flex justify-between items-center mb-2">
                                 <h2 className="font-bold text-gray-700">📂 歷史餐廳</h2>
                                 <button onClick={()=>fetchSavedRestaurants(apiUrl)} className="text-gray-400 text-sm"><i className="fa-solid fa-rotate-right"></i></button>
                             </div>
                             {savedRestaurants.length === 0 ? (
-                                <div className="text-center py-8 bg-gray-50 rounded-xl text-gray-400 text-sm">還沒有儲存的餐廳<br/>上傳一次就會自動存下來囉</div>
+                                <div className="text-center py-8 bg-gray-50 rounded-xl text-gray-400 text-sm">
+                                    {errorMsg ? "無法載入資料，請檢查連線" : "還沒有儲存的餐廳\n上傳一次就會自動存下來囉"}
+                                </div>
                             ) : (
                                 <div className="grid grid-cols-1 gap-3">
                                     {savedRestaurants.map((r, idx) => (
