@@ -39,7 +39,7 @@
             const [myName, setMyName] = useState("");
             const [isNameModalOpen, setIsNameModalOpen] = useState(false);
             
-            // 修正：補上 pasteAreaRef 的定義
+            // 修正：這裡補上了 pasteAreaRef
             const pasteAreaRef = useRef(null);
             const fileInputRef = useRef(null);
 
@@ -73,7 +73,7 @@
 
             useEffect(() => {
                 if (!groupId) return;
-                const interval = setInterval(() => fetchGroupData(groupId, apiUrl), 3000); // 加快更新頻率以便看到付款狀態
+                const interval = setInterval(() => fetchGroupData(groupId, apiUrl), 3000);
                 return () => clearInterval(interval);
             }, [groupId, apiUrl]);
 
@@ -112,7 +112,6 @@
 
             // --- 付款更新功能 ---
             const handlePaymentUpdate = async (orderId, amount) => {
-                // 先更新本地狀態以求即時反應
                 setGroupData(prev => ({
                     ...prev,
                     orders: prev.orders.map(o => o.id === orderId ? { ...o, paidAmount: amount } : o)
